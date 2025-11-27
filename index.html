@@ -17,6 +17,8 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <!-- OCR LIBRARY -->
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
 
     <style>
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f8fafc; height: 100dvh; width: 100vw; overflow: hidden; position: fixed; }
@@ -68,7 +70,8 @@
             History: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
             Settings: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
             Cloud: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>,
-            Trash: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Trash: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+            ScanCard: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="8" rx="1"/></svg>
         };
 
         const compressImage = (file) => new Promise((resolve) => {
@@ -92,17 +95,17 @@
 
         const Modal = ({ isOpen, title, message, type, onClose }) => {
             if (!isOpen) return null;
-            const bg = type === 'success' ? 'bg-emerald-500' : 'bg-rose-500';
+            const bg = type === 'success' ? 'bg-emerald-500' : type === 'info' ? 'bg-blue-500' : 'bg-rose-500';
             return (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl overflow-hidden transform transition-all">
                         <div className={`${bg} p-4 flex justify-center`}>
-                            {type === 'success' ? <Icons.Check className="w-10 h-10 text-white"/> : <Icons.Fingerprint className="w-10 h-10 text-white"/>}
+                            {type === 'success' ? <Icons.Check className="w-10 h-10 text-white"/> : type === 'info' ? <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full"></div> : <Icons.Fingerprint className="w-10 h-10 text-white"/>}
                         </div>
                         <div className="p-6 text-center">
                             <h3 className="text-lg font-bold text-slate-800 mb-2">{title}</h3>
                             <p className="text-sm text-slate-500 mb-6">{message}</p>
-                            <button onClick={onClose} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform">Okay</button>
+                            {type !== 'info' && <button onClick={onClose} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform">Okay</button>}
                         </div>
                     </div>
                 </div>
@@ -110,8 +113,8 @@
         };
 
         function App() {
-            const [view, setView] = useState('scan'); // scan, history, settings
-            const [mode, setMode] = useState('IN'); // IN or OUT
+            const [view, setView] = useState('scan');
+            const [mode, setMode] = useState('IN');
             const [empId, setEmpId] = useState('');
             const [scanning, setScanning] = useState(false);
             const [progress, setProgress] = useState(0);
@@ -125,11 +128,11 @@
             
             const timerRef = useRef(null);
             const cameraRef = useRef(null);
+            const idCardInputRef = useRef(null);
 
             useEffect(() => { localStorage.setItem('att_history', JSON.stringify(history)); }, [history]);
             useEffect(() => { localStorage.setItem('att_script_url', scriptUrl); }, [scriptUrl]);
 
-            // Get Location on Load
             useEffect(() => {
                 if(navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
@@ -139,12 +142,11 @@
                 }
             }, []);
 
-            // Auto-Sync Logic
             useEffect(() => {
                 const interval = setInterval(() => {
                     const pending = history.filter(h => h.syncStatus === 'pending');
                     if(pending.length > 0 && navigator.onLine && scriptUrl) {
-                        syncData(pending[0]); // Sync one by one
+                        syncData(pending[0]);
                     }
                 }, 5000);
                 return () => clearInterval(interval);
@@ -161,14 +163,13 @@
                 } catch(e) { console.log("Sync failed"); }
             };
 
-            // Fingerprint Logic
             const startScan = () => {
                 if(!empId) return setModal({ title: 'Missing ID', message: 'Please enter Employee ID first.', type: 'error' });
                 setScanning(true);
                 setProgress(0);
                 let p = 0;
                 timerRef.current = setInterval(() => {
-                    p += 4; // Speed of scan
+                    p += 4;
                     setProgress(p);
                     if(p >= 100) completeScan();
                 }, 50);
@@ -185,21 +186,18 @@
                 setScanning(false);
                 setProgress(100);
                 
-                // Record Attendance
                 const newRecord = {
                     id: Date.now(),
                     timestamp: new Date().toISOString(),
                     empId: empId,
                     type: mode,
                     geo: geo ? `${geo.lat},${geo.lng}` : 'Unknown',
-                    photo: photo, // Base64 string
+                    photo: photo,
                     syncStatus: 'pending'
                 };
 
                 setHistory([newRecord, ...history]);
                 setModal({ title: 'Attendance Marked', message: `Successfully Checked ${mode}`, type: 'success' });
-                
-                // Reset
                 setEmpId('');
                 setPhoto(null);
             };
@@ -209,6 +207,56 @@
                 if(file) {
                     const compressed = await compressImage(file);
                     setPhoto(compressed);
+                }
+            };
+
+            const handleIDScan = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setModal({ title: 'Scanning ID Card...', message: 'Extracting text from image.', type: 'info' });
+
+                try {
+                    // Tesseract.js is loaded from CDN in <head>
+                    const worker = await Tesseract.createWorker('eng');
+                    const ret = await worker.recognize(file);
+                    await worker.terminate();
+                    
+                    const text = ret.data.text;
+                    console.log("OCR Result:", text);
+
+                    // --- SMART EXTRACTION HEURISTICS ---
+                    
+                    // 1. Look for explicit labels: "ID: 123", "Code: A45"
+                    const labelMatch = text.match(/(?:ID|No|Code|Emp|Roll)\.?\s*[:\-\.]?\s*([A-Z0-9\-]+)/i);
+                    
+                    // 2. Look for alphanumeric sequences: "EMP123" or "S12345"
+                    const alphaNumMatch = text.match(/\b[A-Z]+[0-9]{3,}\b/);
+                    
+                    // 3. Fallback: Find longest number sequence
+                    const numbers = text.match(/\d{3,}/g);
+                    
+                    let foundId = null;
+
+                    if (labelMatch && labelMatch[1]) {
+                        foundId = labelMatch[1].replace(/[^a-zA-Z0-9\-]/g, '');
+                    } else if (alphaNumMatch) {
+                        foundId = alphaNumMatch[0];
+                    } else if (numbers) {
+                        // Pick longest number
+                        foundId = numbers.sort((a, b) => b.length - a.length)[0];
+                    }
+
+                    if (foundId) {
+                        setEmpId(foundId);
+                        setModal({ title: 'ID Detected', message: `Found ID: ${foundId}`, type: 'success' });
+                    } else {
+                        setModal({ title: 'Scan Failed', message: 'Could not detect a clear ID number. Please enter manually.', type: 'error' });
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    setModal({ title: 'Error', message: 'Failed to process image.', type: 'error' });
                 }
             };
 
@@ -283,16 +331,33 @@
                         {view === 'scan' && (
                             <div className="animate-fade-in flex flex-col h-full justify-between">
                                 <div className="space-y-4">
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                                            <Icons.User className="w-5 h-5 text-slate-400" />
+                                    <div className="relative flex gap-2">
+                                        <div className="relative flex-1">
+                                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                                                <Icons.User className="w-5 h-5 text-slate-400" />
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={empId} 
+                                                onChange={(e) => setEmpId(e.target.value)} 
+                                                placeholder="Enter Employee ID" 
+                                                className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                            />
                                         </div>
+                                        <button 
+                                            onClick={() => idCardInputRef.current.click()} 
+                                            className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 flex flex-col items-center justify-center text-indigo-600 hover:bg-indigo-100 transition-colors"
+                                        >
+                                            <Icons.ScanCard className="w-6 h-6 mb-0.5" />
+                                            <span className="text-[9px] font-bold uppercase">Scan ID</span>
+                                        </button>
                                         <input 
-                                            type="text" 
-                                            value={empId} 
-                                            onChange={(e) => setEmpId(e.target.value)} 
-                                            placeholder="Enter Employee ID" 
-                                            className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                            type="file" 
+                                            ref={idCardInputRef} 
+                                            accept="image/*" 
+                                            capture="environment" 
+                                            className="hidden" 
+                                            onChange={handleIDScan}
                                         />
                                     </div>
 
@@ -300,7 +365,7 @@
                                     <div className="flex gap-2">
                                         <button onClick={() => cameraRef.current.click()} className={`flex-1 py-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${photo ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-slate-300 text-slate-400 hover:bg-slate-100'}`}>
                                             <Icons.Camera className="w-5 h-5" />
-                                            <span className="text-xs font-bold uppercase">{photo ? 'Photo Added' : 'Add Face Photo'}</span>
+                                            <span className="text-xs font-bold uppercase">{photo ? 'Photo Added' : 'Add Selfie'}</span>
                                         </button>
                                         <input type="file" ref={cameraRef} accept="image/*" capture="user" className="hidden" onChange={handlePhoto} />
                                     </div>
