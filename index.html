@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TouchLog Attendance</title>
+    
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#4f46e5">
+    
+    <!-- ICONS & FONTS -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f8fafc; height: 100dvh; width: 100vw; overflow: hidden; position: fixed; }
+        #root { height: 100%; width: 100%; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Fingerprint Animation */
+        .scan-line {
+            width: 100%;
+            height: 4px;
+            background: #4f46e5;
+            position: absolute;
+            top: 0;
+            left: 0;
+            box-shadow: 0 0 10px #4f46e5;
+            animation: scan 1.5s linear infinite;
+            display: none;
+        }
+        .scanning .scan-line { display: block; }
+        @keyframes scan { 0% { top: 0; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        
+        .fingerprint-path { fill: #cbd5e1; transition: fill 0.3s; }
+        .scanning .fingerprint-path { fill: #818cf8; }
+        .success .fingerprint-path { fill: #10b981; }
+        
+        .btn-press { transition: transform 0.1s; }
+        .btn-press:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // ==========================================================
+        // CONFIG
+        // ==========================================================
+        const ADMIN_PIN = "1234"; 
+        // ==========================================================
+
+        const Icons = {
+            Fingerprint: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z" opacity="0"/><path className="fingerprint-path" d="M17.81,4.43C16.19,3.2 14.18,2.5 12,2.5C9.82,2.5 7.81,3.2 6.19,4.43L7.6,5.84C8.85,4.92 10.36,4.5 12,4.5C13.64,4.5 15.15,4.92 16.4,5.84L17.81,4.43M12,19.5C10.36,19.5 8.85,18.96 7.6,18.04L6.19,19.46C7.81,20.68 9.82,21.5 12,21.5C14.18,21.5 16.19,20.68 17.81,19.46L16.4,18.04C15.15,18.96 13.64,19.5 12,19.5M12,7C9.24,7 7,9.24 7,12C7,13.1 7.37,14.1 8,14.9V12C8,9.79 9.79,8 12,8C14.21,8 16,9.79 16,12V14.9C16.63,14.1 17,13.1 17,12C17,9.24 14.76,7 12,7M12,10.5C11.17,10.5 10.5,11.17 10.5,12A1.5,1.5 0 0,0 12,13.5A1.5,1.5 0 0,0 13.5,12C13.5,11.17 12.83,10.5 12,10.5M19.5,12C19.5,14.07 18.66,15.94 17.31,17.29L18.73,18.7C20.44,17 21.5,14.63 21.5,12C21.5,9.37 20.44,7 18.73,5.3L17.31,6.71C18.66,8.06 19.5,9.93 19.5,12M4.5,12C4.5,9.93 5.34,8.06 6.69,6.71L5.27,5.3C3.56,7 2.5,9.37 2.5,12C2.5,14.63 3.56,17 5.27,18.7L6.69,17.29C5.34,15.94 4.5,14.07 4.5,12Z" /></svg>,
+            Check: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+            User: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+            MapPin: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
+            Camera: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+            History: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+            Settings: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+            Cloud: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>,
+            Trash: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        };
+
+        const compressImage = (file) => new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (e) => {
+                const img = new Image();
+                img.src = e.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 600; 
+                    let w = img.width, h = img.height;
+                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
+                    else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.5));
+                };
+            };
+        });
+
+        const Modal = ({ isOpen, title, message, type, onClose }) => {
+            if (!isOpen) return null;
+            const bg = type === 'success' ? 'bg-emerald-500' : 'bg-rose-500';
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl overflow-hidden transform transition-all">
+                        <div className={`${bg} p-4 flex justify-center`}>
+                            {type === 'success' ? <Icons.Check className="w-10 h-10 text-white"/> : <Icons.Fingerprint className="w-10 h-10 text-white"/>}
+                        </div>
+                        <div className="p-6 text-center">
+                            <h3 className="text-lg font-bold text-slate-800 mb-2">{title}</h3>
+                            <p className="text-sm text-slate-500 mb-6">{message}</p>
+                            <button onClick={onClose} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold active:scale-95 transition-transform">Okay</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        function App() {
+            const [view, setView] = useState('scan'); // scan, history, settings
+            const [mode, setMode] = useState('IN'); // IN or OUT
+            const [empId, setEmpId] = useState('');
+            const [scanning, setScanning] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [geo, setGeo] = useState(null);
+            const [photo, setPhoto] = useState(null);
+            const [modal, setModal] = useState(null);
+            const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('att_history') || '[]'); } catch { return []; } });
+            const [scriptUrl, setScriptUrl] = useState(localStorage.getItem('att_script_url') || '');
+            const [adminMode, setAdminMode] = useState(false);
+            const [pinInput, setPinInput] = useState('');
+            
+            const timerRef = useRef(null);
+            const cameraRef = useRef(null);
+
+            useEffect(() => { localStorage.setItem('att_history', JSON.stringify(history)); }, [history]);
+            useEffect(() => { localStorage.setItem('att_script_url', scriptUrl); }, [scriptUrl]);
+
+            // Get Location on Load
+            useEffect(() => {
+                if(navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => setGeo({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                        (err) => console.log("Location denied")
+                    );
+                }
+            }, []);
+
+            // Auto-Sync Logic
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    const pending = history.filter(h => h.syncStatus === 'pending');
+                    if(pending.length > 0 && navigator.onLine && scriptUrl) {
+                        syncData(pending[0]); // Sync one by one
+                    }
+                }, 5000);
+                return () => clearInterval(interval);
+            }, [history, scriptUrl]);
+
+            const syncData = async (item) => {
+                try {
+                    await fetch(scriptUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify(item)
+                    });
+                    setHistory(prev => prev.map(h => h.id === item.id ? { ...h, syncStatus: 'synced' } : h));
+                } catch(e) { console.log("Sync failed"); }
+            };
+
+            // Fingerprint Logic
+            const startScan = () => {
+                if(!empId) return setModal({ title: 'Missing ID', message: 'Please enter Employee ID first.', type: 'error' });
+                setScanning(true);
+                setProgress(0);
+                let p = 0;
+                timerRef.current = setInterval(() => {
+                    p += 4; // Speed of scan
+                    setProgress(p);
+                    if(p >= 100) completeScan();
+                }, 50);
+            };
+
+            const stopScan = () => {
+                clearInterval(timerRef.current);
+                setScanning(false);
+                setProgress(0);
+            };
+
+            const completeScan = () => {
+                clearInterval(timerRef.current);
+                setScanning(false);
+                setProgress(100);
+                
+                // Record Attendance
+                const newRecord = {
+                    id: Date.now(),
+                    timestamp: new Date().toISOString(),
+                    empId: empId,
+                    type: mode,
+                    geo: geo ? `${geo.lat},${geo.lng}` : 'Unknown',
+                    photo: photo, // Base64 string
+                    syncStatus: 'pending'
+                };
+
+                setHistory([newRecord, ...history]);
+                setModal({ title: 'Attendance Marked', message: `Successfully Checked ${mode}`, type: 'success' });
+                
+                // Reset
+                setEmpId('');
+                setPhoto(null);
+            };
+
+            const handlePhoto = async (e) => {
+                const file = e.target.files[0];
+                if(file) {
+                    const compressed = await compressImage(file);
+                    setPhoto(compressed);
+                }
+            };
+
+            const handlePin = (val) => {
+                const newPin = pinInput + val;
+                if(newPin.length === 4) {
+                    if(newPin === ADMIN_PIN) { setAdminMode(true); setPinInput(''); }
+                    else { alert("Wrong PIN"); setPinInput(''); }
+                } else {
+                    setPinInput(newPin);
+                }
+            };
+
+            const generateCSV = () => {
+                const headers = ["Date", "Time", "ID", "Type", "Location", "Status"];
+                const rows = history.map(h => {
+                    const d = new Date(h.timestamp);
+                    return [d.toLocaleDateString(), d.toLocaleTimeString(), h.empId, h.type, h.geo, h.syncStatus].join(",");
+                });
+                const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+                const link = document.createElement("a");
+                link.href = encodeURI(csv);
+                link.download = "Attendance_Log.csv";
+                link.click();
+            };
+
+            if (view === 'settings' && !adminMode) {
+                return (
+                    <div className="flex items-center justify-center h-full bg-slate-900 text-white p-6">
+                        <div className="w-full max-w-xs">
+                            <h2 className="text-2xl font-bold mb-6 text-center">Admin Access</h2>
+                            <div className="flex justify-center gap-4 mb-8">
+                                {[0,1,2,3].map(i => <div key={i} className={`w-4 h-4 rounded-full ${i < pinInput.length ? 'bg-indigo-500' : 'bg-slate-700'}`}></div>)}
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                {[1,2,3,4,5,6,7,8,9,0].map(n => (
+                                    <button key={n} onClick={() => handlePin(n.toString())} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95">{n}</button>
+                                ))}
+                            </div>
+                            <button onClick={() => setView('scan')} className="w-full mt-8 py-3 text-slate-400 font-bold">Cancel</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50 max-w-md mx-auto shadow-2xl overflow-hidden relative">
+                    <Modal isOpen={!!modal} title={modal?.title} message={modal?.message} type={modal?.type} onClose={() => setModal(null)} />
+                    
+                    {/* HEADER */}
+                    <div className="bg-indigo-600 p-6 pt-10 text-white rounded-b-[2.5rem] shadow-lg shrink-0 relative z-10">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h1 className="text-2xl font-extrabold tracking-tight">TouchLog</h1>
+                                <p className="text-indigo-200 text-xs font-medium uppercase tracking-wider">Attendance System</p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${geo ? 'bg-emerald-500/20 text-emerald-100' : 'bg-rose-500/20 text-rose-100'}`}>
+                                <Icons.MapPin className="w-3 h-3" /> {geo ? 'GPS Locked' : 'No GPS'}
+                            </div>
+                        </div>
+                        
+                        {/* MODE SWITCHER */}
+                        <div className="bg-black/20 p-1.5 rounded-2xl flex relative">
+                            <div className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ${mode === 'OUT' ? 'translate-x-full left-1.5' : 'left-1.5'}`}></div>
+                            <button onClick={() => setMode('IN')} className={`flex-1 py-3 text-sm font-bold rounded-xl relative z-10 transition-colors ${mode === 'IN' ? 'text-indigo-700' : 'text-indigo-100'}`}>CHECK IN</button>
+                            <button onClick={() => setMode('OUT')} className={`flex-1 py-3 text-sm font-bold rounded-xl relative z-10 transition-colors ${mode === 'OUT' ? 'text-indigo-700' : 'text-indigo-100'}`}>CHECK OUT</button>
+                        </div>
+                    </div>
+
+                    {/* MAIN CONTENT */}
+                    <div className="flex-1 overflow-y-auto p-6 pb-24">
+                        {view === 'scan' && (
+                            <div className="animate-fade-in flex flex-col h-full justify-between">
+                                <div className="space-y-4">
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                                            <Icons.User className="w-5 h-5 text-slate-400" />
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            value={empId} 
+                                            onChange={(e) => setEmpId(e.target.value)} 
+                                            placeholder="Enter Employee ID" 
+                                            className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                                        />
+                                    </div>
+
+                                    {/* SELFIE BUTTON */}
+                                    <div className="flex gap-2">
+                                        <button onClick={() => cameraRef.current.click()} className={`flex-1 py-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${photo ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-slate-300 text-slate-400 hover:bg-slate-100'}`}>
+                                            <Icons.Camera className="w-5 h-5" />
+                                            <span className="text-xs font-bold uppercase">{photo ? 'Photo Added' : 'Add Face Photo'}</span>
+                                        </button>
+                                        <input type="file" ref={cameraRef} accept="image/*" capture="user" className="hidden" onChange={handlePhoto} />
+                                    </div>
+                                </div>
+
+                                {/* FINGERPRINT SCANNER */}
+                                <div className="flex-1 flex flex-col items-center justify-center py-8">
+                                    <div 
+                                        className={`relative w-48 h-48 rounded-full border-4 flex items-center justify-center bg-white shadow-xl overflow-hidden transition-all duration-300 btn-press select-none cursor-pointer ${scanning ? 'border-indigo-500 scale-105' : 'border-slate-100'}`}
+                                        onMouseDown={startScan} 
+                                        onMouseUp={stopScan} 
+                                        onMouseLeave={stopScan}
+                                        onTouchStart={(e) => { e.preventDefault(); startScan(); }}
+                                        onTouchEnd={stopScan}
+                                    >
+                                        <div className={`absolute bottom-0 left-0 right-0 bg-indigo-50 transition-all duration-75`} style={{height: `${progress}%`}}></div>
+                                        <div className={`w-28 h-28 text-slate-300 relative z-10 ${scanning ? 'scanning' : ''}`}>
+                                            <div className="scan-line"></div>
+                                            <Icons.Fingerprint className="w-full h-full" />
+                                        </div>
+                                    </div>
+                                    <p className="mt-6 text-slate-400 font-medium text-sm animate-pulse">{scanning ? 'Scanning...' : 'Hold Finger to Scan'}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'history' && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h2 className="font-bold text-slate-700">Today's Logs</h2>
+                                    <button onClick={generateCSV} className="text-xs bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg font-bold">Export CSV</button>
+                                </div>
+                                {history.length === 0 && <div className="text-center text-slate-400 py-10">No records found.</div>}
+                                {history.map(h => (
+                                    <div key={h.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs ${h.type === 'IN' ? 'bg-indigo-500' : 'bg-slate-500'}`}>{h.type}</div>
+                                            <div>
+                                                <div className="font-bold text-slate-800">ID: {h.empId}</div>
+                                                <div className="text-xs text-slate-400">{new Date(h.timestamp).toLocaleString()}</div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {h.photo && <Icons.Camera className="w-4 h-4 text-emerald-500" />}
+                                            {h.syncStatus === 'synced' ? <Icons.Cloud className="w-4 h-4 text-emerald-500" /> : <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>}
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={() => { if(confirm('Clear all?')) setHistory([]) }} className="w-full py-4 text-rose-500 font-bold text-xs">Clear Local Data</button>
+                            </div>
+                        )}
+
+                        {view === 'settings' && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                                    <h3 className="font-bold text-slate-800 mb-4">Cloud Configuration</h3>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Google Script URL</label>
+                                    <textarea 
+                                        value={scriptUrl}
+                                        onChange={(e) => setScriptUrl(e.target.value)}
+                                        className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono h-24 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        placeholder="https://script.google.com/macros/s/..."
+                                    ></textarea>
+                                    <button onClick={() => { setAdminMode(false); setView('scan'); }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Save & Exit</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* BOTTOM NAV */}
+                    <div className="bg-white border-t border-slate-200 flex justify-around py-3 pb-safe absolute bottom-0 w-full">
+                        <button onClick={() => setView('scan')} className={`p-2 rounded-xl transition-all ${view === 'scan' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+                            <Icons.Fingerprint className="w-6 h-6" />
+                        </button>
+                        <button onClick={() => setView('history')} className={`p-2 rounded-xl transition-all ${view === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+                            <Icons.History className="w-6 h-6" />
+                        </button>
+                        <button onClick={() => setView('settings')} className={`p-2 rounded-xl transition-all ${view === 'settings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+                            <Icons.Settings className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
