@@ -71,7 +71,8 @@
             Settings: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
             Cloud: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>,
             Trash: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
-            ScanCard: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="8" rx="1"/></svg>
+            ScanCard: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="8" rx="1"/></svg>,
+            Building: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="21" width="18" height="2"></rect><path d="M5 21V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14"></path><polyline points="8 21 8 12 16 12 16 21"></polyline></svg>
         };
 
         const compressImage = (file) => new Promise((resolve) => {
@@ -123,15 +124,38 @@
             const [modal, setModal] = useState(null);
             const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('att_history') || '[]'); } catch { return []; } });
             const [scriptUrl, setScriptUrl] = useState(localStorage.getItem('att_script_url') || '');
+            const [orgName, setOrgName] = useState(localStorage.getItem('att_org_name') || '');
             const [adminMode, setAdminMode] = useState(false);
             const [pinInput, setPinInput] = useState('');
+            const [isManaged, setIsManaged] = useState(false);
             
             const timerRef = useRef(null);
             const cameraRef = useRef(null);
             const idCardInputRef = useRef(null);
 
             useEffect(() => { localStorage.setItem('att_history', JSON.stringify(history)); }, [history]);
-            useEffect(() => { localStorage.setItem('att_script_url', scriptUrl); }, [scriptUrl]);
+            useEffect(() => { if(!isManaged) localStorage.setItem('att_script_url', scriptUrl); }, [scriptUrl]);
+            useEffect(() => { if(!isManaged) localStorage.setItem('att_org_name', orgName); }, [orgName]);
+
+            useEffect(() => {
+                const hash = window.location.hash;
+                if(hash && hash.includes('config=')) {
+                    try {
+                        const base64Config = hash.split('config=')[1];
+                        const config = JSON.parse(atob(base64Config));
+                        if(config.n && config.u) {
+                            setOrgName(config.n);
+                            setScriptUrl(config.u);
+                            localStorage.setItem('att_org_name', config.n);
+                            localStorage.setItem('att_script_url', config.u);
+                            setIsManaged(true);
+                            // Clear hash to clean URL but keep state
+                            window.history.replaceState(null, null, window.location.pathname);
+                            setModal({ title: 'App Configured', message: `Welcome ${config.n}!\nReady to mark attendance.`, type: 'success' });
+                        }
+                    } catch(e) { console.error("Config error", e); }
+                }
+            }, []);
 
             useEffect(() => {
                 if(navigator.geolocation) {
@@ -165,6 +189,8 @@
 
             const startScan = () => {
                 if(!empId) return setModal({ title: 'Missing ID', message: 'Please enter Employee ID first.', type: 'error' });
+                if(!orgName) return setModal({ title: 'Setup Required', message: 'Please configure College/Company Name in settings.', type: 'error' });
+                
                 setScanning(true);
                 setProgress(0);
                 let p = 0;
@@ -191,6 +217,7 @@
                     timestamp: new Date().toISOString(),
                     empId: empId,
                     type: mode,
+                    orgName: orgName,
                     geo: geo ? `${geo.lat},${geo.lng}` : 'Unknown',
                     photo: photo,
                     syncStatus: 'pending'
@@ -217,23 +244,13 @@
                 setModal({ title: 'Scanning ID Card...', message: 'Extracting text from image.', type: 'info' });
 
                 try {
-                    // Tesseract.js is loaded from CDN in <head>
                     const worker = await Tesseract.createWorker('eng');
                     const ret = await worker.recognize(file);
                     await worker.terminate();
                     
                     const text = ret.data.text;
-                    console.log("OCR Result:", text);
-
-                    // --- SMART EXTRACTION HEURISTICS ---
-                    
-                    // 1. Look for explicit labels: "ID: 123", "Code: A45"
                     const labelMatch = text.match(/(?:ID|No|Code|Emp|Roll)\.?\s*[:\-\.]?\s*([A-Z0-9\-]+)/i);
-                    
-                    // 2. Look for alphanumeric sequences: "EMP123" or "S12345"
                     const alphaNumMatch = text.match(/\b[A-Z]+[0-9]{3,}\b/);
-                    
-                    // 3. Fallback: Find longest number sequence
                     const numbers = text.match(/\d{3,}/g);
                     
                     let foundId = null;
@@ -243,7 +260,6 @@
                     } else if (alphaNumMatch) {
                         foundId = alphaNumMatch[0];
                     } else if (numbers) {
-                        // Pick longest number
                         foundId = numbers.sort((a, b) => b.length - a.length)[0];
                     }
 
@@ -255,7 +271,6 @@
                     }
 
                 } catch (err) {
-                    console.error(err);
                     setModal({ title: 'Error', message: 'Failed to process image.', type: 'error' });
                 }
             };
@@ -264,17 +279,20 @@
                 const newPin = pinInput + val;
                 if(newPin.length === 4) {
                     if(newPin === ADMIN_PIN) { setAdminMode(true); setPinInput(''); }
-                    else { alert("Wrong PIN"); setPinInput(''); }
+                    else { 
+                        setModal({ title: 'Access Denied', message: 'Incorrect PIN', type: 'error' });
+                        setPinInput(''); 
+                    }
                 } else {
                     setPinInput(newPin);
                 }
             };
 
             const generateCSV = () => {
-                const headers = ["Date", "Time", "ID", "Type", "Location", "Status"];
+                const headers = ["Date", "Time", "Organization", "ID", "Type", "Location", "Status"];
                 const rows = history.map(h => {
                     const d = new Date(h.timestamp);
-                    return [d.toLocaleDateString(), d.toLocaleTimeString(), h.empId, h.type, h.geo, h.syncStatus].join(",");
+                    return [d.toLocaleDateString(), d.toLocaleTimeString(), h.orgName, h.empId, h.type, h.geo, h.syncStatus].join(",");
                 });
                 const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
                 const link = document.createElement("a");
@@ -292,9 +310,12 @@
                                 {[0,1,2,3].map(i => <div key={i} className={`w-4 h-4 rounded-full ${i < pinInput.length ? 'bg-indigo-500' : 'bg-slate-700'}`}></div>)}
                             </div>
                             <div className="grid grid-cols-3 gap-4">
-                                {[1,2,3,4,5,6,7,8,9,0].map(n => (
+                                {[1,2,3,4,5,6,7,8,9].map(n => (
                                     <button key={n} onClick={() => handlePin(n.toString())} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95">{n}</button>
                                 ))}
+                                <button onClick={() => handlePin('*')} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95 text-indigo-400">*</button>
+                                <button onClick={() => handlePin('0')} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95">0</button>
+                                <button onClick={() => handlePin('#')} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95 text-indigo-400">#</button>
                             </div>
                             <button onClick={() => setView('scan')} className="w-full mt-8 py-3 text-slate-400 font-bold">Cancel</button>
                         </div>
@@ -311,7 +332,7 @@
                         <div className="flex justify-between items-center mb-6">
                             <div>
                                 <h1 className="text-2xl font-extrabold tracking-tight">TouchLog</h1>
-                                <p className="text-indigo-200 text-xs font-medium uppercase tracking-wider">Attendance System</p>
+                                <p className="text-indigo-200 text-xs font-medium uppercase tracking-wider">{orgName || "Configure App"}</p>
                             </div>
                             <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${geo ? 'bg-emerald-500/20 text-emerald-100' : 'bg-rose-500/20 text-rose-100'}`}>
                                 <Icons.MapPin className="w-3 h-3" /> {geo ? 'GPS Locked' : 'No GPS'}
@@ -422,13 +443,31 @@
                             <div className="animate-fade-in space-y-4">
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                                     <h3 className="font-bold text-slate-800 mb-4">Cloud Configuration</h3>
+                                    
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">College / Organization Name</label>
+                                    <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 mb-4">
+                                        <Icons.Building className="w-5 h-5 text-slate-400"/>
+                                        <input 
+                                            type="text" 
+                                            value={orgName} 
+                                            onChange={(e) => setOrgName(e.target.value)} 
+                                            disabled={isManaged}
+                                            className={`w-full bg-transparent outline-none font-semibold ${isManaged ? 'text-slate-500' : 'text-slate-700'}`} 
+                                            placeholder="e.g. City College" 
+                                        />
+                                    </div>
+
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Google Script URL</label>
                                     <textarea 
                                         value={scriptUrl}
                                         onChange={(e) => setScriptUrl(e.target.value)}
-                                        className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono h-24 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        disabled={isManaged}
+                                        className={`w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono h-24 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none ${isManaged ? 'text-slate-400' : 'text-slate-800'}`}
                                         placeholder="https://script.google.com/macros/s/..."
                                     ></textarea>
+                                    
+                                    {isManaged && <p className="text-xs text-center text-slate-400 italic mb-4">Settings are managed by Admin Link.</p>}
+
                                     <button onClick={() => { setAdminMode(false); setView('scan'); }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Save & Exit</button>
                                 </div>
                             </div>
