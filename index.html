@@ -3,102 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TouchLog Attendance</title>
+    <title>TouchLog Pro</title>
     
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#4f46e5">
     
-    <!-- ICONS & FONTS -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- OCR & PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
-    <!-- OCR LIBRARY -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <!-- FACE API (AI) -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f8fafc; height: 100dvh; width: 100vw; overflow: hidden; position: fixed; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; height: 100dvh; width: 100vw; overflow: hidden; position: fixed; }
         #root { height: 100%; width: 100%; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Fingerprint Animation */
         .scan-line {
-            width: 100%;
-            height: 4px;
-            background: #4f46e5;
-            position: absolute;
-            top: 0;
-            left: 0;
-            box-shadow: 0 0 10px #4f46e5;
-            animation: scan 1.5s linear infinite;
-            display: none;
+            width: 100%; height: 4px; background: #4f46e5; position: absolute; top: 0; left: 0;
+            box-shadow: 0 0 10px #4f46e5; animation: scan 1.5s linear infinite; display: none;
         }
         .scanning .scan-line { display: block; }
         @keyframes scan { 0% { top: 0; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
         
-        .fingerprint-path { fill: #cbd5e1; transition: fill 0.3s; }
-        .scanning .fingerprint-path { fill: #818cf8; }
-        .success .fingerprint-path { fill: #10b981; }
-        
-        .btn-press { transition: transform 0.1s; }
-        .btn-press:active { transform: scale(0.95); }
+        /* Video overlay for Face Scan */
+        .video-container { position: relative; width: 100%; height: 200px; background: black; border-radius: 1rem; overflow: hidden; margin-bottom: 1rem; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        canvas { position: absolute; top: 0; left: 0; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef } = React;
 
-        // ==========================================================
-        // CONFIG
-        // ==========================================================
         const ADMIN_PIN = "1234"; 
-        // ==========================================================
+        // Use a public CDN for models (Using the official repo pages for reliability)
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
 
         const Icons = {
-            Fingerprint: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z" opacity="0"/><path className="fingerprint-path" d="M17.81,4.43C16.19,3.2 14.18,2.5 12,2.5C9.82,2.5 7.81,3.2 6.19,4.43L7.6,5.84C8.85,4.92 10.36,4.5 12,4.5C13.64,4.5 15.15,4.92 16.4,5.84L17.81,4.43M12,19.5C10.36,19.5 8.85,18.96 7.6,18.04L6.19,19.46C7.81,20.68 9.82,21.5 12,21.5C14.18,21.5 16.19,20.68 17.81,19.46L16.4,18.04C15.15,18.96 13.64,19.5 12,19.5M12,7C9.24,7 7,9.24 7,12C7,13.1 7.37,14.1 8,14.9V12C8,9.79 9.79,8 12,8C14.21,8 16,9.79 16,12V14.9C16.63,14.1 17,13.1 17,12C17,9.24 14.76,7 12,7M12,10.5C11.17,10.5 10.5,11.17 10.5,12A1.5,1.5 0 0,0 12,13.5A1.5,1.5 0 0,0 13.5,12C13.5,11.17 12.83,10.5 12,10.5M19.5,12C19.5,14.07 18.66,15.94 17.31,17.29L18.73,18.7C20.44,17 21.5,14.63 21.5,12C21.5,9.37 20.44,7 18.73,5.3L17.31,6.71C18.66,8.06 19.5,9.93 19.5,12M4.5,12C4.5,9.93 5.34,8.06 6.69,6.71L5.27,5.3C3.56,7 2.5,9.37 2.5,12C2.5,14.63 3.56,17 5.27,18.7L6.69,17.29C5.34,15.94 4.5,14.07 4.5,12Z" /></svg>,
+            Fingerprint: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M17.81,4.43C16.19,3.2 14.18,2.5 12,2.5C9.82,2.5 7.81,3.2 6.19,4.43L7.6,5.84C8.85,4.92 10.36,4.5 12,4.5C13.64,4.5 15.15,4.92 16.4,5.84L17.81,4.43M12,19.5C10.36,19.5 8.85,18.96 7.6,18.04L6.19,19.46C7.81,20.68 9.82,21.5 12,21.5C14.18,21.5 16.19,20.68 17.81,19.46L16.4,18.04C15.15,18.96 13.64,19.5 12,19.5M12,7C9.24,7 7,9.24 7,12C7,13.1 7.37,14.1 8,14.9V12C8,9.79 9.79,8 12,8C14.21,8 16,9.79 16,12V14.9C16.63,14.1 17,13.1 17,12C17,9.24 14.76,7 12,7M12,10.5C11.17,10.5 10.5,11.17 10.5,12A1.5,1.5 0 0,0 12,13.5A1.5,1.5 0 0,0 13.5,12C13.5,11.17 12.83,10.5 12,10.5M19.5,12C19.5,14.07 18.66,15.94 17.31,17.29L18.73,18.7C20.44,17 21.5,14.63 21.5,12C21.5,9.37 20.44,7 18.73,5.3L17.31,6.71C18.66,8.06 19.5,9.93 19.5,12M4.5,12C4.5,9.93 5.34,8.06 6.69,6.71L5.27,5.3C3.56,7 2.5,9.37 2.5,12C2.5,14.63 3.56,17 5.27,18.7L6.69,17.29C5.34,15.94 4.5,14.07 4.5,12Z" /></svg>,
             Check: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
             User: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
             MapPin: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
             Camera: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
             History: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
             Settings: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
-            Cloud: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>,
-            Trash: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
             ScanCard: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="8" rx="1"/></svg>,
-            Building: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="21" width="18" height="2"></rect><path d="M5 21V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14"></path><polyline points="8 21 8 12 16 12 16 21"></polyline></svg>
+            Building: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="21" width="18" height="2"></rect><path d="M5 21V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14"></path><polyline points="8 21 8 12 16 12 16 21"></polyline></svg>,
+            Face: (p) => <svg {...p} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><path d="M9 10a1 1 0 1 0 0 2"/><path d="M15 10a1 1 0 1 0 0 2"/><path d="M9 3v2"/><path d="M15 3v2"/><path d="M12 3v2"/><circle cx="12" cy="12" r="9"/></svg>
         };
-
-        const compressImage = (file) => new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (e) => {
-                const img = new Image();
-                img.src = e.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const MAX_SIZE = 600; 
-                    let w = img.width, h = img.height;
-                    if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
-                    else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
-                    canvas.width = w; canvas.height = h;
-                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                    resolve(canvas.toDataURL('image/jpeg', 0.5));
-                };
-            };
-        });
 
         const Modal = ({ isOpen, title, message, type, onClose }) => {
             if (!isOpen) return null;
             const bg = type === 'success' ? 'bg-emerald-500' : type === 'info' ? 'bg-blue-500' : 'bg-rose-500';
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
                     <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl overflow-hidden transform transition-all">
                         <div className={`${bg} p-4 flex justify-center`}>
                             {type === 'success' ? <Icons.Check className="w-10 h-10 text-white"/> : type === 'info' ? <div className="animate-spin w-8 h-8 border-4 border-white border-t-transparent rounded-full"></div> : <Icons.Fingerprint className="w-10 h-10 text-white"/>}
@@ -120,7 +88,6 @@
             const [scanning, setScanning] = useState(false);
             const [progress, setProgress] = useState(0);
             const [geo, setGeo] = useState(null);
-            const [photo, setPhoto] = useState(null);
             const [modal, setModal] = useState(null);
             const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('att_history') || '[]'); } catch { return []; } });
             const [scriptUrl, setScriptUrl] = useState(localStorage.getItem('att_script_url') || '');
@@ -128,44 +95,48 @@
             const [adminMode, setAdminMode] = useState(false);
             const [pinInput, setPinInput] = useState('');
             const [isManaged, setIsManaged] = useState(false);
-            
-            const timerRef = useRef(null);
-            const cameraRef = useRef(null);
+            const [modelsLoaded, setModelsLoaded] = useState(false);
+            const [videoStream, setVideoStream] = useState(null);
+            const [faceMatcher, setFaceMatcher] = useState(null);
+            const [enrolledFaces, setEnrolledFaces] = useState(() => { try { return JSON.parse(localStorage.getItem('att_faces') || '{}'); } catch { return {}; } });
+
+            const videoRef = useRef(null);
             const idCardInputRef = useRef(null);
 
+            // SAVE EFFECTS
             useEffect(() => { localStorage.setItem('att_history', JSON.stringify(history)); }, [history]);
             useEffect(() => { if(!isManaged) localStorage.setItem('att_script_url', scriptUrl); }, [scriptUrl]);
             useEffect(() => { if(!isManaged) localStorage.setItem('att_org_name', orgName); }, [orgName]);
+            useEffect(() => { localStorage.setItem('att_faces', JSON.stringify(enrolledFaces)); }, [enrolledFaces]);
 
+            // LOAD MODELS
             useEffect(() => {
-                const hash = window.location.hash;
-                if(hash && hash.includes('config=')) {
+                const loadAI = async () => {
                     try {
-                        const base64Config = hash.split('config=')[1];
-                        const config = JSON.parse(atob(base64Config));
-                        if(config.n && config.u) {
-                            setOrgName(config.n);
-                            setScriptUrl(config.u);
-                            localStorage.setItem('att_org_name', config.n);
-                            localStorage.setItem('att_script_url', config.u);
-                            setIsManaged(true);
-                            // Clear hash to clean URL but keep state
-                            window.history.replaceState(null, null, window.location.pathname);
-                            setModal({ title: 'App Configured', message: `Welcome ${config.n}!\nReady to mark attendance.`, type: 'success' });
-                        }
-                    } catch(e) { console.error("Config error", e); }
-                }
+                        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+                        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+                        setModelsLoaded(true);
+                        console.log("AI Models Loaded");
+                    } catch (e) {
+                        setModal({ title: 'AI Error', message: 'Failed to load Face Recognition models. Check internet.', type: 'error' });
+                    }
+                };
+                loadAI();
             }, []);
 
+            // INIT FACE MATCHER FROM SAVED DATA
             useEffect(() => {
-                if(navigator.geolocation) {
-                    navigator.geolocation.getCurrentPosition(
-                        (pos) => setGeo({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                        (err) => console.log("Location denied")
-                    );
+                if(modelsLoaded && Object.keys(enrolledFaces).length > 0) {
+                    const labeledDescriptors = Object.keys(enrolledFaces).map(id => {
+                        const descriptor = new Float32Array(Object.values(enrolledFaces[id]));
+                        return new faceapi.LabeledFaceDescriptors(id, [descriptor]);
+                    });
+                    setFaceMatcher(new faceapi.FaceMatcher(labeledDescriptors, 0.6));
                 }
-            }, []);
+            }, [modelsLoaded, enrolledFaces]);
 
+            // AUTO SYNC
             useEffect(() => {
                 const interval = setInterval(() => {
                     const pending = history.filter(h => h.syncStatus === 'pending');
@@ -178,40 +149,96 @@
 
             const syncData = async (item) => {
                 try {
-                    await fetch(scriptUrl, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        body: JSON.stringify(item)
-                    });
+                    await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(item) });
                     setHistory(prev => prev.map(h => h.id === item.id ? { ...h, syncStatus: 'synced' } : h));
                 } catch(e) { console.log("Sync failed"); }
             };
 
-            const startScan = () => {
-                if(!empId) return setModal({ title: 'Missing ID', message: 'Please enter Employee ID first.', type: 'error' });
-                if(!orgName) return setModal({ title: 'Setup Required', message: 'Please configure College/Company Name in settings.', type: 'error' });
-                
+            const startVideo = async () => {
+                if(!modelsLoaded) return setModal({ title: 'Loading AI', message: 'Please wait for AI models to load...', type: 'info' });
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+                    setVideoStream(stream);
+                    if(videoRef.current) videoRef.current.srcObject = stream;
+                } catch(err) {
+                    setModal({ title: 'Camera Error', message: 'Permission denied.', type: 'error' });
+                }
+            };
+
+            const stopVideo = () => {
+                if(videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    setVideoStream(null);
+                }
+            };
+
+            const captureFaceDescriptor = async () => {
+                if(!videoRef.current) return null;
+                const detections = await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                return detections ? detections.descriptor : null;
+            };
+
+            const handleEnrollment = async () => {
+                if(!empId) return setModal({ title: 'Missing ID', message: 'Enter Employee ID to enroll.', type: 'error' });
                 setScanning(true);
-                setProgress(0);
-                let p = 0;
-                timerRef.current = setInterval(() => {
-                    p += 4;
-                    setProgress(p);
-                    if(p >= 100) completeScan();
-                }, 50);
-            };
-
-            const stopScan = () => {
-                clearInterval(timerRef.current);
-                setScanning(false);
-                setProgress(0);
-            };
-
-            const completeScan = () => {
-                clearInterval(timerRef.current);
-                setScanning(false);
-                setProgress(100);
+                await startVideo();
                 
+                // Wait a bit for video to stabilize
+                setTimeout(async () => {
+                    const descriptor = await captureFaceDescriptor();
+                    stopVideo();
+                    setScanning(false);
+
+                    if(descriptor) {
+                        // Save descriptor as standard object/array
+                        setEnrolledFaces(prev => ({ ...prev, [empId]: Array.from(descriptor) }));
+                        setModal({ title: 'Enrolled!', message: `Face ID registered for ${empId}`, type: 'success' });
+                    } else {
+                        setModal({ title: 'Face Not Found', message: 'Could not detect face. Try again with better light.', type: 'error' });
+                    }
+                }, 2000);
+            };
+
+            const handleAttendanceScan = async () => {
+                if(!empId) return setModal({ title: 'Missing ID', message: 'Please enter Employee ID first.', type: 'error' });
+                if(!orgName) return setModal({ title: 'Setup Required', message: 'Please configure Organization Name.', type: 'error' });
+                
+                // Check if user is enrolled
+                if(!enrolledFaces[empId]) {
+                    return setModal({ title: 'Not Enrolled', message: 'This ID has not enrolled a Face ID yet. Ask Admin.', type: 'error' });
+                }
+
+                setScanning(true);
+                await startVideo();
+
+                let attempts = 0;
+                const checkFace = async () => {
+                    attempts++;
+                    const descriptor = await captureFaceDescriptor();
+                    
+                    if(descriptor && faceMatcher) {
+                        const bestMatch = faceMatcher.findBestMatch(descriptor);
+                        if(bestMatch.label === empId) {
+                            stopVideo();
+                            setScanning(false);
+                            completeAttendance("Face Verified (Match: " + Math.round((1-bestMatch.distance)*100) + "%)");
+                            return;
+                        }
+                    }
+
+                    if(attempts < 10) {
+                        setTimeout(checkFace, 300); // Retry every 300ms
+                    } else {
+                        stopVideo();
+                        setScanning(false);
+                        setModal({ title: 'Verification Failed', message: 'Face does not match the enrolled ID.', type: 'error' });
+                    }
+                };
+                
+                setTimeout(checkFace, 1000); // Start checking after 1s
+            };
+
+            const completeAttendance = (method) => {
                 const newRecord = {
                     id: Date.now(),
                     timestamp: new Date().toISOString(),
@@ -219,86 +246,40 @@
                     type: mode,
                     orgName: orgName,
                     geo: geo ? `${geo.lat},${geo.lng}` : 'Unknown',
-                    photo: photo,
+                    method: method,
                     syncStatus: 'pending'
                 };
-
                 setHistory([newRecord, ...history]);
-                setModal({ title: 'Attendance Marked', message: `Successfully Checked ${mode}`, type: 'success' });
+                setModal({ title: 'Verified & Logged', message: `Welcome ${empId}`, type: 'success' });
                 setEmpId('');
-                setPhoto(null);
-            };
-
-            const handlePhoto = async (e) => {
-                const file = e.target.files[0];
-                if(file) {
-                    const compressed = await compressImage(file);
-                    setPhoto(compressed);
-                }
             };
 
             const handleIDScan = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-
-                setModal({ title: 'Scanning ID Card...', message: 'Extracting text from image.', type: 'info' });
-
+                setModal({ title: 'Scanning ID...', message: 'Extracting text...', type: 'info' });
                 try {
                     const worker = await Tesseract.createWorker('eng');
                     const ret = await worker.recognize(file);
                     await worker.terminate();
-                    
                     const text = ret.data.text;
-                    const labelMatch = text.match(/(?:ID|No|Code|Emp|Roll)\.?\s*[:\-\.]?\s*([A-Z0-9\-]+)/i);
-                    const alphaNumMatch = text.match(/\b[A-Z]+[0-9]{3,}\b/);
                     const numbers = text.match(/\d{3,}/g);
-                    
-                    let foundId = null;
-
-                    if (labelMatch && labelMatch[1]) {
-                        foundId = labelMatch[1].replace(/[^a-zA-Z0-9\-]/g, '');
-                    } else if (alphaNumMatch) {
-                        foundId = alphaNumMatch[0];
-                    } else if (numbers) {
-                        foundId = numbers.sort((a, b) => b.length - a.length)[0];
-                    }
-
-                    if (foundId) {
+                    if (numbers) {
+                        const foundId = numbers.sort((a, b) => b.length - a.length)[0];
                         setEmpId(foundId);
-                        setModal({ title: 'ID Detected', message: `Found ID: ${foundId}`, type: 'success' });
+                        setModal({ title: 'ID Detected', message: `Found: ${foundId}`, type: 'success' });
                     } else {
-                        setModal({ title: 'Scan Failed', message: 'Could not detect a clear ID number. Please enter manually.', type: 'error' });
+                        setModal({ title: 'Scan Failed', message: 'Enter manually.', type: 'error' });
                     }
-
-                } catch (err) {
-                    setModal({ title: 'Error', message: 'Failed to process image.', type: 'error' });
-                }
+                } catch (err) { setModal({ title: 'Error', message: 'Failed to read image.', type: 'error' }); }
             };
 
             const handlePin = (val) => {
                 const newPin = pinInput + val;
                 if(newPin.length === 4) {
                     if(newPin === ADMIN_PIN) { setAdminMode(true); setPinInput(''); }
-                    else { 
-                        setModal({ title: 'Access Denied', message: 'Incorrect PIN', type: 'error' });
-                        setPinInput(''); 
-                    }
-                } else {
-                    setPinInput(newPin);
-                }
-            };
-
-            const generateCSV = () => {
-                const headers = ["Date", "Time", "Organization", "ID", "Type", "Location", "Status"];
-                const rows = history.map(h => {
-                    const d = new Date(h.timestamp);
-                    return [d.toLocaleDateString(), d.toLocaleTimeString(), h.orgName, h.empId, h.type, h.geo, h.syncStatus].join(",");
-                });
-                const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
-                const link = document.createElement("a");
-                link.href = encodeURI(csv);
-                link.download = "Attendance_Log.csv";
-                link.click();
+                    else { setModal({ title: 'Access Denied', message: 'Incorrect PIN', type: 'error' }); setPinInput(''); }
+                } else { setPinInput(newPin); }
             };
 
             if (view === 'settings' && !adminMode) {
@@ -310,11 +291,10 @@
                                 {[0,1,2,3].map(i => <div key={i} className={`w-4 h-4 rounded-full ${i < pinInput.length ? 'bg-indigo-500' : 'bg-slate-700'}`}></div>)}
                             </div>
                             <div className="grid grid-cols-3 gap-4">
-                                {[1,2,3,4,5,6,7,8,9].map(n => (
+                                {[1,2,3,4,5,6,7,8,9,0].map(n => (
                                     <button key={n} onClick={() => handlePin(n.toString())} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95">{n}</button>
                                 ))}
                                 <button onClick={() => handlePin('*')} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95 text-indigo-400">*</button>
-                                <button onClick={() => handlePin('0')} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95">0</button>
                                 <button onClick={() => handlePin('#')} className="bg-slate-800 p-4 rounded-xl font-bold text-xl active:scale-95 text-indigo-400">#</button>
                             </div>
                             <button onClick={() => setView('scan')} className="w-full mt-8 py-3 text-slate-400 font-bold">Cancel</button>
@@ -330,166 +310,96 @@
                     {/* HEADER */}
                     <div className="bg-indigo-600 p-6 pt-10 text-white rounded-b-[2.5rem] shadow-lg shrink-0 relative z-10">
                         <div className="flex justify-between items-center mb-6">
-                            <div>
-                                <h1 className="text-2xl font-extrabold tracking-tight">TouchLog</h1>
-                                <p className="text-indigo-200 text-xs font-medium uppercase tracking-wider">{orgName || "Configure App"}</p>
-                            </div>
-                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${geo ? 'bg-emerald-500/20 text-emerald-100' : 'bg-rose-500/20 text-rose-100'}`}>
-                                <Icons.MapPin className="w-3 h-3" /> {geo ? 'GPS Locked' : 'No GPS'}
+                            <div><h1 className="text-2xl font-extrabold tracking-tight">TouchLog Pro</h1><p className="text-indigo-200 text-xs font-medium uppercase">{orgName || "Configure App"}</p></div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${modelsLoaded ? 'bg-emerald-500/20 text-emerald-100' : 'bg-rose-500/20 text-rose-100'}`}>
+                                <Icons.Face className="w-3 h-3" /> {modelsLoaded ? 'AI Ready' : 'Loading AI...'}
                             </div>
                         </div>
-                        
-                        {/* MODE SWITCHER */}
-                        <div className="bg-black/20 p-1.5 rounded-2xl flex relative">
-                            <div className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ${mode === 'OUT' ? 'translate-x-full left-1.5' : 'left-1.5'}`}></div>
-                            <button onClick={() => setMode('IN')} className={`flex-1 py-3 text-sm font-bold rounded-xl relative z-10 transition-colors ${mode === 'IN' ? 'text-indigo-700' : 'text-indigo-100'}`}>CHECK IN</button>
-                            <button onClick={() => setMode('OUT')} className={`flex-1 py-3 text-sm font-bold rounded-xl relative z-10 transition-colors ${mode === 'OUT' ? 'text-indigo-700' : 'text-indigo-100'}`}>CHECK OUT</button>
-                        </div>
+                        <div className="bg-black/20 p-1.5 rounded-2xl flex relative"><div className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-md transition-all duration-300 ${mode === 'OUT' ? 'translate-x-full left-1.5' : 'left-1.5'}`}></div><button onClick={() => setMode('IN')} className={`flex-1 py-3 text-sm font-bold rounded-xl relative z-10 transition-colors ${mode === 'IN' ? 'text-indigo-700' : 'text-indigo-100'}`}>CHECK IN</button><button onClick={() => setMode('OUT')} className={`flex-1 py-3 text-sm font-bold rounded-xl relative z-10 transition-colors ${mode === 'OUT' ? 'text-indigo-700' : 'text-indigo-100'}`}>CHECK OUT</button></div>
                     </div>
 
-                    {/* MAIN CONTENT */}
                     <div className="flex-1 overflow-y-auto p-6 pb-24">
                         {view === 'scan' && (
                             <div className="animate-fade-in flex flex-col h-full justify-between">
                                 <div className="space-y-4">
                                     <div className="relative flex gap-2">
                                         <div className="relative flex-1">
-                                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                                                <Icons.User className="w-5 h-5 text-slate-400" />
-                                            </div>
-                                            <input 
-                                                type="text" 
-                                                value={empId} 
-                                                onChange={(e) => setEmpId(e.target.value)} 
-                                                placeholder="Enter Employee ID" 
-                                                className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-                                            />
+                                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none"><Icons.User className="w-5 h-5 text-slate-400" /></div>
+                                            <input type="text" value={empId} onChange={(e) => setEmpId(e.target.value)} placeholder="Enter Employee ID" className="w-full pl-10 pr-4 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"/>
                                         </div>
-                                        <button 
-                                            onClick={() => idCardInputRef.current.click()} 
-                                            className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 flex flex-col items-center justify-center text-indigo-600 hover:bg-indigo-100 transition-colors"
-                                        >
-                                            <Icons.ScanCard className="w-6 h-6 mb-0.5" />
-                                            <span className="text-[9px] font-bold uppercase">Scan ID</span>
-                                        </button>
-                                        <input 
-                                            type="file" 
-                                            ref={idCardInputRef} 
-                                            accept="image/*" 
-                                            capture="environment" 
-                                            className="hidden" 
-                                            onChange={handleIDScan}
-                                        />
-                                    </div>
-
-                                    {/* SELFIE BUTTON */}
-                                    <div className="flex gap-2">
-                                        <button onClick={() => cameraRef.current.click()} className={`flex-1 py-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${photo ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-slate-300 text-slate-400 hover:bg-slate-100'}`}>
-                                            <Icons.Camera className="w-5 h-5" />
-                                            <span className="text-xs font-bold uppercase">{photo ? 'Photo Added' : 'Add Selfie'}</span>
-                                        </button>
-                                        <input type="file" ref={cameraRef} accept="image/*" capture="user" className="hidden" onChange={handlePhoto} />
+                                        <button onClick={() => idCardInputRef.current.click()} className="bg-indigo-50 border border-indigo-200 rounded-2xl px-4 flex flex-col items-center justify-center text-indigo-600 hover:bg-indigo-100"><Icons.ScanCard className="w-6 h-6 mb-0.5" /><span className="text-[9px] font-bold uppercase">Scan ID</span></button>
+                                        <input type="file" ref={idCardInputRef} accept="image/*" className="hidden" onChange={handleIDScan}/>
                                     </div>
                                 </div>
 
-                                {/* FINGERPRINT SCANNER */}
-                                <div className="flex-1 flex flex-col items-center justify-center py-8">
-                                    <div 
-                                        className={`relative w-48 h-48 rounded-full border-4 flex items-center justify-center bg-white shadow-xl overflow-hidden transition-all duration-300 btn-press select-none cursor-pointer ${scanning ? 'border-indigo-500 scale-105' : 'border-slate-100'}`}
-                                        onMouseDown={startScan} 
-                                        onMouseUp={stopScan} 
-                                        onMouseLeave={stopScan}
-                                        onTouchStart={(e) => { e.preventDefault(); startScan(); }}
-                                        onTouchEnd={stopScan}
-                                    >
-                                        <div className={`absolute bottom-0 left-0 right-0 bg-indigo-50 transition-all duration-75`} style={{height: `${progress}%`}}></div>
-                                        <div className={`w-28 h-28 text-slate-300 relative z-10 ${scanning ? 'scanning' : ''}`}>
-                                            <div className="scan-line"></div>
-                                            <Icons.Fingerprint className="w-full h-full" />
+                                <div className="flex-1 flex flex-col items-center justify-center py-4">
+                                    {scanning ? (
+                                        <div className="video-container">
+                                            <video ref={videoRef} autoPlay muted playsInline></video>
+                                            <div className="scan-line" style={{display:'block'}}></div>
+                                            <div className="absolute bottom-2 w-full text-center text-white font-bold text-sm bg-black/50 py-1">Analyzing Face...</div>
                                         </div>
-                                    </div>
-                                    <p className="mt-6 text-slate-400 font-medium text-sm animate-pulse">{scanning ? 'Scanning...' : 'Hold Finger to Scan'}</p>
+                                    ) : (
+                                        <div 
+                                            className={`relative w-48 h-48 rounded-full border-4 flex items-center justify-center bg-white shadow-xl transition-all duration-300 btn-press select-none cursor-pointer ${scanning ? 'border-indigo-500 scale-105' : 'border-slate-100'}`}
+                                            onTouchStart={handleAttendanceScan}
+                                            onMouseDown={handleAttendanceScan}
+                                        >
+                                            <div className="w-28 h-28 text-slate-300"><Icons.Face className="w-full h-full" /></div>
+                                        </div>
+                                    )}
+                                    <p className="mt-6 text-slate-400 font-medium text-sm">{scanning ? 'Hold still...' : 'Tap Face Icon to Verify'}</p>
                                 </div>
                             </div>
                         )}
 
                         {view === 'history' && (
                             <div className="animate-fade-in space-y-4">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h2 className="font-bold text-slate-700">Today's Logs</h2>
-                                    <button onClick={generateCSV} className="text-xs bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg font-bold">Export CSV</button>
-                                </div>
+                                <div className="flex justify-between items-center mb-2"><h2 className="font-bold text-slate-700">Today's Logs</h2></div>
                                 {history.length === 0 && <div className="text-center text-slate-400 py-10">No records found.</div>}
                                 {history.map(h => (
                                     <div key={h.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-xs ${h.type === 'IN' ? 'bg-indigo-500' : 'bg-slate-500'}`}>{h.type}</div>
-                                            <div>
-                                                <div className="font-bold text-slate-800">ID: {h.empId}</div>
-                                                <div className="text-xs text-slate-400">{new Date(h.timestamp).toLocaleString()}</div>
-                                            </div>
+                                            <div><div className="font-bold text-slate-800">ID: {h.empId}</div><div className="text-xs text-slate-400">{new Date(h.timestamp).toLocaleString()}</div></div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            {h.photo && <Icons.Camera className="w-4 h-4 text-emerald-500" />}
-                                            {h.syncStatus === 'synced' ? <Icons.Cloud className="w-4 h-4 text-emerald-500" /> : <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>}
-                                        </div>
+                                        <div className="flex items-center gap-2"><div className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-bold border border-emerald-100">{h.method || "Face ID"}</div></div>
                                     </div>
                                 ))}
-                                <button onClick={() => { if(confirm('Clear all?')) setHistory([]) }} className="w-full py-4 text-rose-500 font-bold text-xs">Clear Local Data</button>
                             </div>
                         )}
 
                         {view === 'settings' && (
                             <div className="animate-fade-in space-y-4">
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                                    <h3 className="font-bold text-slate-800 mb-4">Cloud Configuration</h3>
-                                    
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">College / Organization Name</label>
-                                    <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50 mb-4">
-                                        <Icons.Building className="w-5 h-5 text-slate-400"/>
-                                        <input 
-                                            type="text" 
-                                            value={orgName} 
-                                            onChange={(e) => setOrgName(e.target.value)} 
-                                            disabled={isManaged}
-                                            className={`w-full bg-transparent outline-none font-semibold ${isManaged ? 'text-slate-500' : 'text-slate-700'}`} 
-                                            placeholder="e.g. City College" 
-                                        />
+                                    <h3 className="font-bold text-slate-800 mb-4">Enrollment Station</h3>
+                                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4">
+                                        <h4 className="font-bold text-indigo-800 text-sm mb-2">Enroll New User</h4>
+                                        <input type="text" value={empId} onChange={e => setEmpId(e.target.value)} placeholder="ID to Enroll" className="w-full p-2 mb-2 rounded border border-indigo-200 text-sm"/>
+                                        <button onClick={handleEnrollment} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm">Scan & Enroll Face</button>
                                     </div>
-
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Google Script URL</label>
-                                    <textarea 
-                                        value={scriptUrl}
-                                        onChange={(e) => setScriptUrl(e.target.value)}
-                                        disabled={isManaged}
-                                        className={`w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono h-24 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none ${isManaged ? 'text-slate-400' : 'text-slate-800'}`}
-                                        placeholder="https://script.google.com/macros/s/..."
-                                    ></textarea>
                                     
-                                    {isManaged && <p className="text-xs text-center text-slate-400 italic mb-4">Settings are managed by Admin Link.</p>}
-
+                                    <h3 className="font-bold text-slate-800 mb-4 mt-6">App Config</h3>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Org Name</label>
+                                    <input type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} disabled={isManaged} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm font-bold mb-4" />
+                                    
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Script URL</label>
+                                    <input type="text" value={scriptUrl} onChange={(e) => setScriptUrl(e.target.value)} disabled={isManaged} className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono mb-4" />
+                                    
                                     <button onClick={() => { setAdminMode(false); setView('scan'); }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold">Save & Exit</button>
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* BOTTOM NAV */}
                     <div className="bg-white border-t border-slate-200 flex justify-around py-3 pb-safe absolute bottom-0 w-full">
-                        <button onClick={() => setView('scan')} className={`p-2 rounded-xl transition-all ${view === 'scan' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-                            <Icons.Fingerprint className="w-6 h-6" />
-                        </button>
-                        <button onClick={() => setView('history')} className={`p-2 rounded-xl transition-all ${view === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-                            <Icons.History className="w-6 h-6" />
-                        </button>
-                        <button onClick={() => setView('settings')} className={`p-2 rounded-xl transition-all ${view === 'settings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-                            <Icons.Settings className="w-6 h-6" />
-                        </button>
+                        <button onClick={() => setView('scan')} className={`p-2 rounded-xl transition-all ${view === 'scan' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}><Icons.Face className="w-6 h-6" /></button>
+                        <button onClick={() => setView('history')} className={`p-2 rounded-xl transition-all ${view === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}><Icons.History className="w-6 h-6" /></button>
+                        <button onClick={() => setView('settings')} className={`p-2 rounded-xl transition-all ${view === 'settings' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}><Icons.Settings className="w-6 h-6" /></button>
                     </div>
                 </div>
             );
         }
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
